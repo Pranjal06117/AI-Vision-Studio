@@ -1,9 +1,14 @@
 
 import io
+import hashlib
 import streamlit as st
 import pandas as pd
 
-from PIL import Image
+from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
+
+# Enable Pillow to decode iPhone HEIC/HEIF photos.
+register_heif_opener()
 
 from modules.animal_classifier import predict_animal
 from modules.waste_classifier import predict_waste
@@ -173,26 +178,33 @@ def display_waste_result(result):
 
 
 def image_to_png_bytes(image):
-    """Convert a PIL image to downloadable PNG bytes."""
-
+    """Convert a PIL image or array into PNG bytes for display/download."""
     if not isinstance(image, Image.Image):
         image = Image.fromarray(image)
-
-    image = image.convert("RGB")
-
     output = io.BytesIO()
-    image.save(output, format="PNG")
-
+    image.convert("RGB").save(output, format="PNG")
     return output.getvalue()
 
 
 def read_uploaded_image(uploaded_file):
-    """Read uploaded image safely as RGB."""
+    """Decode supported formats and correct EXIF camera orientation."""
+    raw_bytes = uploaded_file.getvalue()
+    if not raw_bytes:
+        raise ValueError("The uploaded file is empty.")
+    try:
+        with Image.open(io.BytesIO(raw_bytes)) as source:
+            image = ImageOps.exif_transpose(source)
+            image.load()
+            return image.convert("RGB")
+    except Exception as error:
+        raise ValueError(
+            "Could not open this image. Use a valid JPG, PNG, WebP, HEIC or HEIF file."
+        ) from error
 
-    image = Image.open(uploaded_file)
-    image.load()
 
-    return image.convert("RGB")
+def uploaded_image_signature(uploaded_file):
+    """Hash the image contents so same-name uploads are distinguished."""
+    return hashlib.sha256(uploaded_file.getvalue()).hexdigest()
 
 
 # ==================================================
@@ -297,7 +309,7 @@ elif page == "🐾 Animal Classification":
 
     uploaded_file = st.file_uploader(
         "Upload an animal image",
-        type=["jpg", "jpeg", "png"],
+        type=["jpg", "jpeg", "png", "webp", "heic", "heif"],
         key="animal_upload"
     )
 
@@ -308,7 +320,7 @@ elif page == "🐾 Animal Classification":
         st.subheader("Uploaded Image")
 
         st.image(
-            image,
+            image_to_png_bytes(image),
             caption="Your uploaded animal image",
             use_container_width=True
         )
@@ -333,7 +345,7 @@ elif page == "🐾 Animal Classification":
                     )
 
     else:
-        st.info("Upload a JPG or PNG image to begin.")
+        st.info("Upload a JPG, PNG, WebP, HEIC or HEIF image to begin.")
 
 
 # ==================================================
@@ -350,7 +362,7 @@ elif page == "♻️ Waste Classification":
 
     uploaded_file = st.file_uploader(
         "Upload a waste image",
-        type=["jpg", "jpeg", "png"],
+        type=["jpg", "jpeg", "png", "webp", "heic", "heif"],
         key="waste_upload"
     )
 
@@ -361,7 +373,7 @@ elif page == "♻️ Waste Classification":
         st.subheader("Uploaded Image")
 
         st.image(
-            image,
+            image_to_png_bytes(image),
             caption="Your uploaded waste image",
             use_container_width=True
         )
@@ -386,7 +398,7 @@ elif page == "♻️ Waste Classification":
                     )
 
     else:
-        st.info("Upload a JPG or PNG image to begin.")
+        st.info("Upload a JPG, PNG, WebP, HEIC or HEIF image to begin.")
 
 
 # ==================================================
@@ -396,14 +408,11 @@ elif page == "♻️ Waste Classification":
 elif page == "✏️ Image to Sketch":
 
     st.title("✏️ Image to Sketch Studio")
-
-    st.write(
-        "Transform your photograph into a pencil or technical sketch."
-    )
+    st.write("Transform your photograph into a pencil or technical sketch.")
 
     uploaded_file = st.file_uploader(
         "Upload your photograph",
-        type=["jpg", "jpeg", "png"],
+        type=["jpg", "jpeg", "png", "webp", "heic", "heif"],
         key="sketch_upload"
     )
 
@@ -416,101 +425,64 @@ elif page == "✏️ Image to Sketch":
     )
 
     if uploaded_file is not None:
+        try:
+            original_image = read_uploaded_image(uploaded_file)
+            upload_signature = uploaded_image_signature(uploaded_file)
+            sketch_signature = f"{upload_signature}:{line_strength}"
 
-        original_image = read_uploaded_image(uploaded_file)
+            st.subheader("Original Photograph")
+            st.image(
+                image_to_png_bytes(original_image),
+                caption="Original Image",
+                use_container_width=True
+            )
 
-        st.subheader("Original Photograph")
-
-        st.image(
-            original_image,
-            caption="Original Image",
-            use_container_width=True
-        )
-
-        if st.button(
-            "✨ Generate Sketch",
-            use_container_width=True
-        ):
-
-            with st.spinner("Creating your sketch..."):
-
-                try:
-
+            if st.button("✨ Generate Sketch", use_container_width=True):
+                with st.spinner("Creating your sketch..."):
                     sketch_image = convert_to_sketch(
                         original_image,
                         line_strength=line_strength
                     )
+                    st.session_state["generated_sketch_bytes"] = image_to_png_bytes(sketch_image)
+                    st.session_state["generated_sketch_signature"] = sketch_signature
 
-                    st.session_state["generated_sketch"] = sketch_image
-                    st.session_state["sketch_source"] = uploaded_file.name
+            if (
+                st.session_state.get("generated_sketch_bytes") is not None
+                and st.session_state.get("generated_sketch_signature") == sketch_signature
+            ):
+                sketch_bytes = st.session_state["generated_sketch_bytes"]
+                st.success("Sketch generated successfully!")
+                st.divider()
+                st.subheader("Before and After")
 
-                    st.success("Sketch generated successfully!")
-
-                except Exception as error:
-
-                    st.error(
-                        f"Sketch generation failed: {error}"
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.image(
+                        image_to_png_bytes(original_image),
+                        caption="Original Photograph",
+                        use_container_width=True
                     )
-
-        sketch_image = st.session_state.get(
-            "generated_sketch"
-        )
-
-        sketch_source = st.session_state.get(
-            "sketch_source"
-        )
-
-        # Only show the saved sketch for the same uploaded file.
-        if (
-            sketch_image is not None
-            and sketch_source == uploaded_file.name
-        ):
-
-            st.divider()
-
-            st.subheader("Before and After")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.image(
-                    original_image,
-                    caption="Original Photograph",
-                    use_container_width=True
-                )
-
-            with col2:
-                st.image(
-                    sketch_image,
-                    caption="Generated Sketch",
-                    use_container_width=True
-                )
-
-            st.divider()
-
-            try:
-
-                png_data = image_to_png_bytes(
-                    sketch_image
-                )
+                with col2:
+                    st.image(
+                        sketch_bytes,
+                        caption="Generated Sketch",
+                        use_container_width=True
+                    )
 
                 st.download_button(
                     label="⬇️ Download Sketch as PNG",
-                    data=png_data,
+                    data=sketch_bytes,
                     file_name="AI_Vision_Studio_Sketch.png",
                     mime="image/png",
                     use_container_width=True
                 )
+            else:
+                st.info("Your photo is ready. Select Generate Sketch to create the sketch.")
 
-            except Exception as error:
-
-                st.error(
-                    f"Download preparation failed: {error}"
-                )
-
+        except Exception as error:
+            st.error(f"Image processing failed: {error}")
     else:
-
-        st.info("Upload a photograph to create your sketch.")
+        st.info("Upload a JPG, PNG, WebP, HEIC or HEIF photograph to create your sketch.")
 
 
 # ==================================================
