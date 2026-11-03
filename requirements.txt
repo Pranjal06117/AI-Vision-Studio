@@ -4,6 +4,6 @@ tensorflow==2.21.0
 numpy
 pandas
 pillow
-opencv-python-headless
+opencv-python-headless==4.12.0.88
 scikit-learn
-pillow-heif
+pillow-heif==1.1.1
