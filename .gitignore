@@ -1,0 +1,65 @@
+
+# =====================================
+# AI Vision Studio - Git Ignore
+# =====================================
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment variables and secrets
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Training datasets
+dataset/
+dataset_cleaned/
+dataset_extra/
+dataset_final/
+dataset_prepared/
+dataset_prepared_v3/
+waste_test_images/
+
+# Training scripts and files
+training/
+
+# Unnecessary training outputs
+outputs/waste_v3/
+outputs/conflicting_duplicates/
+
+# Evaluation reports
+outputs/animal_v2/classification_report.txt
+outputs/animal_v2/confusion_matrix.csv
+outputs/waste_v4/classification_report.txt
+outputs/waste_v4/confusion_matrix.csv
+
+# Generated output images
+outputs/sketch_output.png
+outputs/waste_training_samples.png
+
+# Testing files
+test.jpg
+test_*.py
+cat.png
+dog.png
+
+# IDE settings
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
